@@ -1,0 +1,1 @@
+DevJacobLib = exports["DevJacob_CommonLib"]:getLibObject(GetCurrentResourceName())
