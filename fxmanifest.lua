@@ -4,7 +4,7 @@ game "gta5"
 
 author "DevJacob"
 description "Collection of common and reuseable functions"
-version "1.0.0"
+version "1.1.0"
 
 files {
 	"lib/client.lua",
