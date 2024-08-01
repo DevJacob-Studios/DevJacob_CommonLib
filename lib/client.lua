@@ -1,5 +1,10 @@
 DevJacobLib = {
-	_CurrentResource = GetCurrentResourceName()
+	_CurrentResource = GetCurrentResourceName(),
+	_Cache = {
+		Hashes = {},
+		ValidModelHashes = {},
+		GroundAtCoords = {},
+	}
 }
 
 --------------------
@@ -81,6 +86,69 @@ DevJacobLib.Math = {
 	IsNaN = function(value)
 		return value ~= value
 	end,
+
+	Lerp = function(a, b, t)
+		return a + (b - a) * t
+	end,
+
+	GetOppositeRotationValue = function(rotVal)
+		return rotVal + (180.0 * DevJacobLib.Ternary(rotVal < 0.0, 1, -1))
+	end,
+
+	GetOffsetBetweenRotValues = function(rotVal1, rotVal2)
+		local a = rotVal1
+		local c = rotVal2
+		local b = c - a
+		return b
+	end,
+
+	GetOffsetBetweenRotations = function(rot1, rot2)
+		return vector3(
+			DevJacobLib.Math.GetOffsetBetweenRotValues(rot1.x, rot2.x),
+			DevJacobLib.Math.GetOffsetBetweenRotValues(rot1.y, rot2.y),
+			DevJacobLib.Math.GetOffsetBetweenRotValues(rot1.z, rot2.z)
+		)
+	end,
+
+	GetOffsetFromCoordsInWorldCoords = function(position, rotation, offset)
+		local rotX = math.rad(rotation.x)
+		local rotY = math.rad(rotation.y)
+		local rotZ = math.rad(rotation.z)
+
+		local matrix = {
+			{
+				math.cos(rotZ) * math.cos(rotY) - math.sin(rotZ) * math.sin(rotX) * math.sin(rotY),
+				math.cos(rotY) * math.sin(rotZ) + math.cos(rotZ) * math.sin(rotX) * math.sin(rotY),
+				(-1 * math.cos(rotX)) * math.sin(rotY),
+				1
+			},
+			{
+				(-1 * math.cos(rotX)) * math.sin(rotZ),
+				math.cos(rotZ) * math.cos(rotX),
+				math.sin(rotX),
+				1
+			},
+			{
+				math.cos(rotZ) * math.sin(rotY) + math.cos(rotY) * math.sin(rotZ) * math.sin(rotX),
+				math.sin(rotZ) * math.sin(rotY) - math.cos(rotZ) * math.cos(rotY) * math.sin(rotX),
+				math.cos(rotX) * math.cos(rotY),
+				1
+			},
+			{
+				position.x,
+				position.y,
+				position.z,
+				1
+			}
+		}
+
+		local x = offset.x * matrix[1][1] + offset.y * matrix[2][1] + offset.z * matrix[3][1] + matrix[4][1]
+		local y = offset.x * matrix[1][2] + offset.y * matrix[2][2] + offset.z * matrix[3][2] + matrix[4][2]
+		local z = offset.x * matrix[1][3] + offset.y * matrix[2][3] + offset.z * matrix[3][3] + matrix[4][3]
+
+		return vector3(x, y, z)
+	end,
+	
 }
 
 function DevJacobLib.Ternary(condition, trueValue, falseValue)
@@ -93,6 +161,24 @@ end
 --------------------
 -- Shared | End --
 --------------------
+
+function DevJacobLib.GetHash(str)
+    local hash = DevJacobLib._Cache.Hashes[str]
+    if not hash then
+        hash = joaat(str)
+        DevJacobLib._Cache.Hashes[str] = hash
+    end
+    return hash
+end
+
+function DevJacobLib.IsModelValid(hash)
+	local modelValid = DevJacobLib._Cache.ValidModelHashes[hash]
+	if modelValid == nil then
+		modelValid = IsModelValid(hash)
+		DevJacobLib._Cache.ValidModelHashes[hash] = modelValid
+	end
+    return modelValid
+end
 
 function DevJacobLib.DrawText3DThisFrame(drawOptions)
     -- Validate the draw options
@@ -222,4 +308,39 @@ function DevJacobLib.GetNearbyVehicles(coords, maxDistance, includePlayerVehicle
 	end
 
 	return nearby
+end
+
+function DevJacobLib.GroundCoords(coords, maxRetries, retryCount)
+	retryCount = retryCount or 0
+	maxRetries = maxRetries or 3
+	local _round = DevJacobLib.Math.Round
+	local origCoords = coords
+	coords = vector3(_round(coords.x, 1), _round(coords.y, 1), _round(coords.z, 1))
+	local key = vector2(coords.x, coords.y)
+	local _result = function(z)
+		return vector3(origCoords.x, origCoords.y, z)
+	end
+
+	-- Check the cache
+	if DevJacobLib._Cache.GroundAtCoords[key] ~= nil then
+		return _result(DevJacobLib._Cache.GroundAtCoords[key])
+	end
+	
+	-- Try to fetch
+	RequestCollisionAtCoord(coords.x, coords.y, coords.x)
+	local fetchSuccessful, zCoord = GetGroundZExcludingObjectsFor_3dCoord(coords.x, coords.y, coords.z, true)
+
+	-- If the fetch failed, and we are still able to retry, try again
+	if not fetchSuccessful and retryCount < maxRetries then
+		return DevJacobLib.GroundCoords(origCoords, maxRetries, retryCount + 1)
+	end
+
+	-- If the fetch was successful cache the result, otherwise default
+	if fetchSuccessful then
+		DevJacobLib._Cache.GroundAtCoords[key] = zCoord
+		return _result(zCoord)
+	else
+		local playerPos = GetEntityCoords(PlayerPedId())
+		return _result(playerPos.z - 0.9)
+	end
 end
