@@ -81,6 +81,10 @@ DevJacobLib.Math = {
 	IsNaN = function(value)
 		return value ~= value
 	end,
+
+	Lerp = function(a, b, t)
+		return a + (b - a) * t
+	end,
 }
 
 function DevJacobLib.Ternary(condition, trueValue, falseValue)
